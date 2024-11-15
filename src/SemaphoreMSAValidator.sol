@@ -23,9 +23,29 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
     uint8 constant MAX_OWNERS = 32;
 
     // custom errors
-    error NotAdmin();
     error ModuleAlreadyInstalled();
     error ModuleNotInstalled();
+    error NotAdmin();
+
+    // OwnableValidator errors
+    error CannotRemoveOwner();
+    error InvalidOwner();
+    error InvalidThreshold();
+    error IsOwnerAlready();
+    error MaxOwnersReached();
+    error NotSortedAndUnique();
+    error OwnerNotExisted(address, address);
+    error ThresholdNotSet();
+
+    // Events
+    event ModuleInitialized(address indexed account);
+    event ModuleUninitialized(address indexed account);
+
+    // OwnableValidator events
+    event AddedOwner(address indexed, address indexed);
+    event RemovedOwner(address indexed, address indexed);
+    event ThresholdSet(address indexed account, uint8 indexed);
+
 
     /**
      * Storage
@@ -35,6 +55,7 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
     mapping(address => bool) public inUse;
     mapping(address => uint256) public gIds;
 
+    // Coming from OwnableValidator
     SentinelList4337Lib.SentinelList owners;
     mapping(address account => uint8) public threshold;
     mapping(address account => uint8) public ownerCount;
@@ -78,36 +99,114 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
      * Config
      *
      */
-    function onInstall(bytes calldata data) external override
-    {
+    function isInitialized(address account) public view returns (bool) {
+        // return inUse[account];
+
+        // OwnableValidator
+        return threshold[account] != 0;
+    }
+
+    function onInstall(bytes calldata data) external override {
         // create a new group
         // msg.sender is the smart account that call this contract
         // the address in data is the EOA owner of the smart account
         // you often have to parse the passed in parameters to get the original caller
         // The address of the original caller (the one who sends http request to the bundler) must
         // be passed in from data
-        (address admin, uint256 commitment) = abi.decode(data, (address, uint256));
-        uint256 gId = semaphore.createGroup();
-        inUse[msg.sender] = true;
-        gIds[msg.sender] = gId;
-        admins[msg.sender] = admin;
+        // (address admin, uint256 commitment) = abi.decode(data, (address, uint256));
+        // uint256 gId = semaphore.createGroup();
+        // inUse[msg.sender] = true;
+        // gIds[msg.sender] = gId;
+        // admins[msg.sender] = admin;
 
         // Add the admin commitment in as the first group member.
-        semaphore.addMember(gId, commitment);
+        // semaphore.addMember(gId, commitment);
+
+        // OwnableValidator
+        (uint8 _threshold, address[] memory _owners) = abi.decode(data, (uint8, address[]));
+
+        // Todo: check that module is not installed
+
+        if (!_owners.isSortedAndUniquified()) { revert NotSortedAndUnique(); }
+        if (_threshold == 0) { revert ThresholdNotSet(); }
+
+        uint8 ownersLength = uint8(_owners.length);
+        if (ownersLength < _threshold) { revert InvalidThreshold(); }
+        if (_threshold > MAX_OWNERS) { revert MaxOwnersReached(); }
+
+        (bool found,) = _owners.searchSorted(address(0));
+        if (found) { revert InvalidOwner(); }
+
+        address account = msg.sender;
+        threshold[account] = _threshold;
+        ownerCount[account] = ownersLength;
+        owners.init(account);
+
+        for (uint8 i = 0; i < ownersLength; i++) {
+            owners.push(account, _owners[i]);
+        }
+
+        emit ModuleInitialized(account);
     }
 
-    function onUninstall(bytes calldata data) external override
-        moduleInstalled
-        isAdmin(data)
-    {
+    function onUninstall(bytes calldata data) external override {
         // remove from our data structure
         delete inUse[msg.sender];
         delete gIds[msg.sender];
         delete admins[msg.sender];
+
+        // OwnableValidator onUninstall
+        // Todo: check that module is installed
+
+        owners.popAll(msg.sender);
+        threshold[msg.sender] = 0;
+        ownerCount[msg.sender] = 0;
+        emit ModuleUninitialized(msg.sender);
     }
 
-    function isInitialized(address smartAccount) external view returns (bool) {
-        return inUse[smartAccount];
+    function setThreshold(uint8 newThreshold) external {
+        // OwnableValidator
+        // 0. check the module is initialized for the acct
+        // check it is not 0,
+        // check it is not greater than curent owner
+        if (!isInitialized(msg.sender)) { revert NotInitialized(msg.sender); }
+        if (newThreshold == 0) { revert InvalidThreshold(); }
+        if (newThreshold > ownerCount[msg.sender]) { revert InvalidThreshold(); }
+
+        threshold[msg.sender] = newThreshold;
+        emit ThresholdSet(msg.sender, newThreshold);
+    }
+
+    function addOwner(address newOwner) external {
+        if (!isInitialized(msg.sender)) { revert NotInitialized(msg.sender); }
+        // 0. check the module is initialized for the acct
+        // 1. check newOwner != 0
+        // 2. check ownerCount < MAX_OWNERS
+        // 3. cehck owner not existed yet
+        if (newOwner == address(0)) { revert InvalidOwner(); }
+        if (ownerCount[msg.sender] == MAX_OWNERS) { revert MaxOwnersReached(); }
+        if (owners.contains(msg.sender, newOwner)) { revert IsOwnerAlready(); }
+
+        owners.push(msg.sender, newOwner);
+        ownerCount[msg.sender] += 1;
+        emit AddedOwner(msg.sender, newOwner);
+    }
+
+    function removeOwner(address prevOwner, address owner) external {
+        if (!isInitialized(msg.sender)) { revert NotInitialized(msg.sender); }
+        // 1. cannot be lower then threshold after removal
+        // 2. owner existed
+        // note: DX is bad that I need to specify a prevOwner in removal
+        if (ownerCount[msg.sender] == threshold[msg.sender]) { revert CannotRemoveOwner(); }
+        if (!owners.contains(msg.sender, owner)) { revert OwnerNotExisted(msg.sender, owner); }
+
+        threshold[msg.sender] -= 1;
+        owners.pop(msg.sender, prevOwner, owner);
+        emit RemovedOwner(msg.sender, owner);
+    }
+
+    function getOwners(address account) external view returns (address[] memory ownersArr) {
+        (ownersArr,) = owners.getEntriesPaginated(account, SENTINEL, MAX_OWNERS);
     }
 
     /**
