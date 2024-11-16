@@ -4,7 +4,7 @@ pragma solidity >=0.8.23 <=0.8.29;
 import { ERC7579ValidatorBase } from "modulekit/Modules.sol";
 import { PackedUserOperation } from "modulekit/external/ERC4337.sol";
 import { SentinelList4337Lib, SENTINEL } from "sentinellist/SentinelList4337.sol";
-import { CheckSignatures } from "checknsignatures/CheckNSignatures.sol";
+import { CheckSignatures } from "src/utils/CheckSignatures.sol";
 
 import { SignatureCheckerLib } from "solady/utils/SignatureCheckerLib.sol";
 import { LibSort } from "solady/utils/LibSort.sol";
@@ -35,6 +35,7 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
     error MaxOwnersReached();
     error NotSortedAndUnique();
     error OwnerNotExisted(address, address);
+    error ThresholdNotReached();
     error ThresholdNotSet();
 
     // Events
@@ -222,10 +223,56 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
         override
         returns (ValidationData)
     {
-        bool sigFailed = false;
-        (uint256 sender, bytes memory _signature) = abi.decode(userOp.signature, (uint256, bytes));
+        // bool sigFailed = false;
+        // (uint256 sender, bytes memory _signature) = abi.decode(userOp.signature, (uint256, bytes));
 
-        return _packValidationData(!sigFailed, type(uint48).max, 0);
+        // return _packValidationData(!sigFailed, type(uint48).max, 0);
+
+        // OwnableValidator
+        bool isValid = _validateSignatureWithConfig(userOp.sender, userOpHash, userOp.signature);
+
+        if (isValid) { return VALIDATION_SUCCESS; }
+        return VALIDATION_FAILED;
+    }
+
+    function _validateSignatureWithConfig(
+        address sender,
+        bytes32 userOpHash,
+        bytes calldata signature
+    )
+        internal
+        view
+        returns (bool)
+    {
+        uint8 _threshold = threshold[sender];
+
+        // Can be the case that sender has no module for the acct. In that case threshold == 0
+        if (_threshold == 0) { return false; }
+
+        address[] memory signers = CheckSignatures.recoverNSignatures(
+            ECDSA.toEthSignedMessageHash(userOpHash),
+            signature,
+            _threshold
+        );
+
+        signers.sort();
+        signers.uniquifySorted();
+        uint8 signerLen = uint8(signers.length);
+
+        console.log("signerLen: %s, threshold: %s", signerLen, _threshold);
+
+        if (signerLen < _threshold) { return false; }
+
+        uint8 thresholdNum;
+
+        for (uint8 i = 0; i < signerLen; i++) {
+            if (owners.contains(sender, signers[i])) {
+                thresholdNum += 1;
+            }
+        }
+
+        if (thresholdNum >= _threshold) { return true; }
+        return false;
     }
 
     function isValidSignatureWithSender(
@@ -279,6 +326,17 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
     //////////////////////////////////////////////////////////////////////////*/
 
     /**
+     * Check if the module is of a certain type
+     *
+     * @param typeID The type ID to check
+     *
+     * @return true if the module is of the given type, false otherwise
+     */
+    function isModuleType(uint256 typeID) external pure override returns (bool) {
+        return typeID == TYPE_VALIDATOR || typeID == TYPE_POLICY;
+    }
+
+    /**
      * The name of the module
      *
      * @return name The name of the module
@@ -294,16 +352,5 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
      */
     function version() external pure returns (string memory) {
         return "0.0.1";
-    }
-
-    /**
-     * Check if the module is of a certain type
-     *
-     * @param typeID The type ID to check
-     *
-     * @return true if the module is of the given type, false otherwise
-     */
-    function isModuleType(uint256 typeID) external pure override returns (bool) {
-        return typeID == TYPE_VALIDATOR;
     }
 }

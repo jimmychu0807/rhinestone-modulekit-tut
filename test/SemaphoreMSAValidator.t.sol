@@ -19,11 +19,19 @@ import { ISemaphoreGroups } from "semaphore/interfaces/ISemaphoreGroups.sol";
 import { ISemaphoreVerifier } from "semaphore/interfaces/ISemaphoreVerifier.sol";
 import { SemaphoreVerifier } from "semaphore/base/SemaphoreVerifier.sol";
 
-import { SemaphoreMSAValidator } from "src/SemaphoreMSAValidator.sol";
+import { SemaphoreMSAValidator, ERC7579ValidatorBase } from "src/SemaphoreMSAValidator.sol";
+
+import { VALIDATION_SUCCESS_UNWRAPPED, VALIDATION_FAILED_UNWRAPPED } from "test/utils/ERC7579.sol";
+import { PackedUserOperation, getEmptyUserOperation } from "test/utils/ERC4337.sol";
+import { signHash } from "test/utils/Signature.sol";
+
+import { LibSort } from "solady/utils/LibSort.sol";
 
 contract SemaphoreValidatorTest is RhinestoneModuleKit, Test {
     using ModuleKitHelpers for *;
     using ModuleKitUserOp for *;
+
+    using LibSort for *;
 
     AccountInstance internal smartAcct;
     SemaphoreMSAValidator internal semaphoreValidator;
@@ -35,8 +43,25 @@ contract SemaphoreValidatorTest is RhinestoneModuleKit, Test {
     Account admin;
     uint256 commitment_admin = 3;
 
-    function setUp() public {
+    // OwnableValidator
+    uint256 $threshold = 2;
+    address[] $owners;
+    uint256[] $ownerSks;
+
+    // modifiers
+    modifier whenThresholdIsSet() {
+        bytes memory data = abi.encode($threshold, $owners);
+
+        semaphoreValidator.onInstall(data);
+        address[] memory owners = semaphoreValidator.getOwners(address(this));
+        assertEq(owners.length, $owners.length);
+
+        _;
+    }
+
+    function setUp() public virtual {
         init();
+        // BaseTest.setUp();
 
         // Deploy Semaphore
         SemaphoreVerifier semaphoreVerifier = new SemaphoreVerifier();
@@ -58,6 +83,27 @@ contract SemaphoreValidatorTest is RhinestoneModuleKit, Test {
         // Create the acct and install the validator
         smartAcct = makeAccountInstance("Smart Acct");
         vm.deal(address(smartAcct.account), 10 ether);
+
+        // OwnableValidator
+        $owners = new address[](2);
+        $ownerSks = new uint256[](2);
+        (address _owner1, uint256 _owner1Sk) = makeAddrAndKey("owner1");
+        $owners[0] = _owner1;
+        $ownerSks[0] = _owner1Sk;
+
+        (address _owner2, uint256 _owner2Sk) = makeAddrAndKey("owner2");
+        uint256 cnt = 0;
+        while (uint160(_owner2) <= uint160(_owner1)) {
+            (_owner2, _owner2Sk) = makeAddrAndKey(vm.toString(cnt));
+            cnt += 1;
+        }
+        $owners[1] = _owner2;
+        $ownerSks[1] = _owner2Sk;
+
+        console.logAddress($owners[0]);
+        console.logAddress($owners[1]);
+        // console.log("sk[0]: %s", $ownerSks[0]);
+        // console.log("sk[1]: %s", $ownerSks[1]);
     }
 
     function test_SemaphoreDeployProperly() public {
@@ -141,15 +187,42 @@ contract SemaphoreValidatorTest is RhinestoneModuleKit, Test {
         semaphore.validateProof(gId, goodProof);
     }
 
-    function test_InstallSemaphoreValidator() public {
-        smartAcct.installModule({
-            moduleTypeId: MODULE_TYPE_VALIDATOR,
-            module: address(semaphoreValidator),
-            data: abi.encode(admin.addr, commitment_admin)
-        });
+    // function test_InstallSemaphoreValidator() public {
+    //     smartAcct.installModule({
+    //         moduleTypeId: MODULE_TYPE_VALIDATOR,
+    //         module: address(semaphoreValidator),
+    //         data: abi.encode(admin.addr, commitment_admin)
+    //     });
 
-        ISemaphore semaphore = semaphoreValidator.semaphore();
-        uint256 groupCounter = semaphore.groupCounter();
-        assertEq(groupCounter, 1);
+    //     ISemaphore semaphore = semaphoreValidator.semaphore();
+    //     uint256 groupCounter = semaphore.groupCounter();
+    //     assertEq(groupCounter, 1);
+    // }
+
+    function test_ValidateUserOpWhenThresholdIsNotSet() public {
+        PackedUserOperation memory userOp = getEmptyUserOperation();
+        userOp.sender = address(this);
+        bytes32 userOpHash = keccak256("userOpHash");
+        uint256 validationData = ERC7579ValidatorBase.ValidationData.unwrap(
+            semaphoreValidator.validateUserOp(userOp, userOpHash)
+        );
+
+        assertEq(validationData, VALIDATION_FAILED_UNWRAPPED);
+    }
+
+    function test_ValidateUserOpWhenTheSignaturesAreValid()
+        public
+        whenThresholdIsSet
+    {
+        PackedUserOperation memory userOp = getEmptyUserOperation();
+        userOp.sender = address(this);
+
+        bytes32 userOpHash = keccak256("userOpHash");
+        bytes memory sign1 = signHash($ownerSks[0], userOpHash);
+        bytes memory sign2 = signHash($ownerSks[1], userOpHash);
+        userOp.signature = abi.encodePacked(sign1, sign2);
+
+        ERC7579ValidatorBase.ValidationData res = semaphoreValidator.validateUserOp(userOp, userOpHash);
+        assertEq(ERC7579ValidatorBase.ValidationData.unwrap(res), VALIDATION_SUCCESS_UNWRAPPED);
     }
 }
