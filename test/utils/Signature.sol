@@ -20,8 +20,8 @@ function signHash(uint256 sk, bytes32 digest) returns (bytes memory) {
     address signer = ECDSA.recover(signedHash, v, r, s);
     require(signer == vm.addr(sk), "Invalid signature");
 
-    // console.log("signHash");
-    // console.logBytes32(digest);
-    // console.logBytes32(signedHash);
-    return abi.encodePacked(r, s, v);
+    bytes memory signature = abi.encodePacked(r, s, v);
+    console.log("signHash");
+    console.logBytes(signature);
+    return signature;
 }

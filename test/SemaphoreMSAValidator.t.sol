@@ -27,6 +27,8 @@ import { signHash } from "test/utils/Signature.sol";
 
 import { LibSort } from "solady/utils/LibSort.sol";
 
+bytes4 constant EIP1271_MAGIC_VALUE = 0x1626ba7e;
+
 contract SemaphoreValidatorTest is RhinestoneModuleKit, Test {
     using ModuleKitHelpers for *;
     using ModuleKitUserOp for *;
@@ -225,4 +227,19 @@ contract SemaphoreValidatorTest is RhinestoneModuleKit, Test {
         ERC7579ValidatorBase.ValidationData res = semaphoreValidator.validateUserOp(userOp, userOpHash);
         assertEq(ERC7579ValidatorBase.ValidationData.unwrap(res), VALIDATION_SUCCESS_UNWRAPPED);
     }
+
+    function test_IsValidSignatureWithSenderWhenTheUniqueSignaturesAreLessThanThreshold()
+        public
+        whenThresholdIsSet
+    {
+        address sender = address(1);
+        bytes32 userOpHash = keccak256("userOpHash");
+        bytes memory sign1 = signHash($ownerSks[0], userOpHash);
+        bytes memory sign2 = signHash($ownerSks[1], userOpHash);
+        bytes memory data = abi.encodePacked(sign1, sign2);
+
+        bytes4 result = semaphoreValidator.isValidSignatureWithSender(sender, userOpHash, data);
+        assertEq(result, EIP1271_MAGIC_VALUE);
+    }
+
 }

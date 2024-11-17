@@ -275,8 +275,16 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
         return false;
     }
 
+    /**
+     * Validates an ERC-1271 signature with the sender
+     *
+     * @param hash bytes32 hash of the data
+     * @param signature bytes data containing the signatures
+     *
+     * @return bytes4 EIP1271_SUCCESS if the signature is valid, EIP1271_FAILED otherwise
+     */
     function isValidSignatureWithSender(
-        address sender,
+        address,
         bytes32 hash,
         bytes calldata signature
     )
@@ -284,9 +292,12 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
         view
         virtual
         override
-        returns (bytes4 sugValidationResult)
+        returns (bytes4)
     {
-        return EIP1271_SUCCESS;
+        bool isValid = _validateSignatureWithConfig(msg.sender, hash, signature);
+
+        if (isValid) return EIP1271_SUCCESS;
+        return EIP1271_FAILED;
     }
 
     function validateSignatureWithData(

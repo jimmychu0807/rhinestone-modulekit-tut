@@ -2,6 +2,7 @@
 pragma solidity >=0.8.23 <=0.8.29;
 
 import { ECDSA } from "solady/utils/ECDSA.sol";
+import { console } from "forge-std/Console.sol";
 
 library CheckSignatures {
     bytes4 constant EIP1271_MAGIC_VALUE = 0x1626ba7e;
@@ -16,6 +17,9 @@ library CheckSignatures {
         uint256 requiredSignatureLength = threshold * 65;
         uint256 signaturesLength = signatures.length;
         recoveredSigners = new address[](threshold);
+
+        console.log("recoverNSignatures");
+        console.logBytes(signatures);
 
         for (uint256 i = 0; i < threshold; i++) {
             // split v, r, s from signatures
@@ -68,10 +72,15 @@ library CheckSignatures {
         assembly {
             let signaturePos := mul(65, pos)
             // why the signature is starting from 0x20?
+            // this is how mload() work
             r := mload(add(signatures, add(signaturePos, 0x20)))
             s := mload(add(signatures, add(signaturePos, 0x40)))
             v := byte(0, mload(add(signatures, add(signaturePos, 0x60))))
         }
+        // console.log("signatureSplit r-s-v");
+        // console.logBytes32(r);
+        // console.logBytes32(s);
+        // console.logUint(v);
     }
 }
 
