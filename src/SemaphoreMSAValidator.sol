@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.23 <=0.8.29;
 
+import { console } from "forge-std/console.sol";
+
 import { ERC7579ValidatorBase } from "modulekit/Modules.sol";
 import { PackedUserOperation } from "modulekit/external/ERC4337.sol";
 import { SentinelList4337Lib, SENTINEL } from "sentinellist/SentinelList4337.sol";
@@ -10,10 +12,7 @@ import { SignatureCheckerLib } from "solady/utils/SignatureCheckerLib.sol";
 import { LibSort } from "solady/utils/LibSort.sol";
 import { ECDSA } from "solady/utils/ECDSA.sol";
 
-import { ISemaphore } from "semaphore/interfaces/ISemaphore.sol";
-import { ISemaphoreGroups } from "semaphore/interfaces/ISemaphoreGroups.sol";
-
-import { console } from "forge-std/console.sol";
+import { ISemaphore, ISemaphoreGroups } from "src/utils/semaphore.sol";
 
 contract SemaphoreMSAValidator is ERC7579ValidatorBase {
     using LibSort for *;
@@ -46,7 +45,6 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
     event AddedOwner(address indexed, address indexed);
     event RemovedOwner(address indexed, address indexed);
     event ThresholdSet(address indexed account, uint8 indexed);
-
 
     /**
      * Storage
@@ -259,7 +257,7 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
         signers.uniquifySorted();
         uint8 signerLen = uint8(signers.length);
 
-        console.log("signerLen: %s, threshold: %s", signerLen, _threshold);
+        // console.log("signerLen: %s, threshold: %s", signerLen, _threshold);
 
         if (signerLen < _threshold) { return false; }
 
@@ -300,18 +298,55 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
         return EIP1271_FAILED;
     }
 
+    /**
+     * Validates a signature with data only. This is a stateless validation and do not rely on
+     *   the contract storage.
+     *
+     * @param hash bytes32 hash of the data
+     * @param signature bytes data containing the signatures
+     * @param data bytes data containing the data. Whatever read from the storage is encoded in the `data`.
+     *
+     * @return bool true if the signature is valid, false otherwise
+     */
     function validateSignatureWithData(
-        bytes32,
-        bytes calldata,
-        bytes calldata
+        bytes32 hash,
+        bytes calldata signature,
+        bytes calldata data
     )
         external
         view
         virtual
         override
-        returns (bool validSig)
+        returns (bool)
     {
-        return true;
+        (uint8 _threshold, address[] memory _owners) = abi.decode(data, (uint8, address[]));
+
+        // `_owners` have to be sorted and unique
+        if (!_owners.isSortedAndUniquified()) {
+            return false;
+        }
+
+        if (_threshold == 0) {
+            return false;
+        }
+
+        address[] memory signers = CheckSignatures.recoverNSignatures(
+            ECDSA.toEthSignedMessageHash(hash), signature, _threshold
+        );
+
+        // You need to sort() and uniquifySorted() <- this is the proper way to use it.
+        signers.sort();
+        signers.uniquifySorted();
+
+        uint8 validSigners;
+        uint8 signersLength = uint8(signers.length);
+        for (uint256 i = 0; i < signersLength; i++) {
+            (bool found,) = _owners.searchSorted(signers[i]);
+            if (found) validSigners += 1;
+        }
+
+        if (validSigners >= _threshold) return true;
+        return false;
     }
 
     function addMember(uint256 memberCommitment) external

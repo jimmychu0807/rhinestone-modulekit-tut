@@ -11,16 +11,18 @@ import {
     AccountInstance,
     UserOpData
 } from "modulekit/ModuleKit.sol";
-import { MODULE_TYPE_VALIDATOR } from "modulekit/external/ERC7579.sol";
 
-import { Semaphore } from "semaphore/Semaphore.sol";
-import { ISemaphore } from "semaphore/interfaces/ISemaphore.sol";
-import { ISemaphoreGroups } from "semaphore/interfaces/ISemaphoreGroups.sol";
-import { ISemaphoreVerifier } from "semaphore/interfaces/ISemaphoreVerifier.sol";
-import { SemaphoreVerifier } from "semaphore/base/SemaphoreVerifier.sol";
+import {
+    Semaphore,
+    ISemaphore,
+    ISemaphoreGroups,
+    ISemaphoreVerifier,
+    SemaphoreVerifier
+} from "src/utils/semaphore.sol";
 
 import { SemaphoreMSAValidator, ERC7579ValidatorBase } from "src/SemaphoreMSAValidator.sol";
 
+import { MODULE_TYPE_VALIDATOR } from "modulekit/external/ERC7579.sol";
 import { VALIDATION_SUCCESS_UNWRAPPED, VALIDATION_FAILED_UNWRAPPED } from "test/utils/ERC7579.sol";
 import { PackedUserOperation, getEmptyUserOperation } from "test/utils/ERC4337.sol";
 import { signHash } from "test/utils/Signature.sol";
@@ -29,7 +31,7 @@ import { LibSort } from "solady/utils/LibSort.sol";
 
 bytes4 constant EIP1271_MAGIC_VALUE = 0x1626ba7e;
 
-contract SemaphoreValidatorTest is RhinestoneModuleKit, Test {
+contract SemaphoreValidatorUnitTest is RhinestoneModuleKit, Test {
     using ModuleKitHelpers for *;
     using ModuleKitUserOp for *;
 
@@ -62,6 +64,8 @@ contract SemaphoreValidatorTest is RhinestoneModuleKit, Test {
     }
 
     function setUp() public virtual {
+        // coming from contract AuxiliaryFactory:
+        //   https://github.com/rhinestonewtf/modulekit/blob/main/src/test/Auxiliary.sol
         init();
         // BaseTest.setUp();
 
@@ -212,6 +216,22 @@ contract SemaphoreValidatorTest is RhinestoneModuleKit, Test {
         assertEq(validationData, VALIDATION_FAILED_UNWRAPPED);
     }
 
+    function test_ValidateUserOpWhenTheUniqueSignaturesAreInvalid()
+        public
+        whenThresholdIsSet
+    {
+        PackedUserOperation memory userOp = getEmptyUserOperation();
+        userOp.sender = address(this);
+
+        bytes32 userOpHash = keccak256("userOpHash");
+        bytes memory sign1 = signHash(uint256(1), userOpHash);
+        bytes memory sign2 = signHash($ownerSks[1], userOpHash);
+        userOp.signature = abi.encodePacked(sign1, sign2);
+
+        ERC7579ValidatorBase.ValidationData res = semaphoreValidator.validateUserOp(userOp, userOpHash);
+        assertEq(ERC7579ValidatorBase.ValidationData.unwrap(res), VALIDATION_FAILED_UNWRAPPED);
+    }
+
     function test_ValidateUserOpWhenTheSignaturesAreValid()
         public
         whenThresholdIsSet
@@ -228,7 +248,7 @@ contract SemaphoreValidatorTest is RhinestoneModuleKit, Test {
         assertEq(ERC7579ValidatorBase.ValidationData.unwrap(res), VALIDATION_SUCCESS_UNWRAPPED);
     }
 
-    function test_IsValidSignatureWithSenderWhenTheUniqueSignaturesAreLessThanThreshold()
+    function test_IsValidSignatureWithSenderWhenTheUniqueSignaturesAreGreaterThanThreshold()
         public
         whenThresholdIsSet
     {
@@ -242,4 +262,18 @@ contract SemaphoreValidatorTest is RhinestoneModuleKit, Test {
         assertEq(result, EIP1271_MAGIC_VALUE);
     }
 
+    function test_ValidateSignatureWithDataWhenTheUniqueSignaturesAreGreaterThanThreshold()
+        public
+        whenThresholdIsSet
+    {
+        bytes32 userOpHash = keccak256("userOpHash");
+
+        bytes memory sign1 = signHash($ownerSks[0], userOpHash);
+        bytes memory sign2 = signHash($ownerSks[1], userOpHash);
+        bytes memory signature = abi.encodePacked(sign1, sign2);
+        bytes memory data = abi.encode($threshold, $owners);
+
+        bool result = semaphoreValidator.validateSignatureWithData(userOpHash, signature, data);
+        assertTrue(result);
+    }
 }

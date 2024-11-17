@@ -21,7 +21,7 @@ function signHash(uint256 sk, bytes32 digest) returns (bytes memory) {
     require(signer == vm.addr(sk), "Invalid signature");
 
     bytes memory signature = abi.encodePacked(r, s, v);
-    console.log("signHash");
-    console.logBytes(signature);
+    // console.log("signHash");
+    // console.logBytes(signature);
     return signature;
 }

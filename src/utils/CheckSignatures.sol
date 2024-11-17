@@ -18,8 +18,8 @@ library CheckSignatures {
         uint256 signaturesLength = signatures.length;
         recoveredSigners = new address[](threshold);
 
-        console.log("recoverNSignatures");
-        console.logBytes(signatures);
+        // console.log("recoverNSignatures");
+        // console.logBytes(signatures);
 
         for (uint256 i = 0; i < threshold; i++) {
             // split v, r, s from signatures
