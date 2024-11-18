@@ -13,6 +13,8 @@ import { ExecutionLib } from "erc7579/lib/ExecutionLib.sol";
 import { LibSort } from "solady/utils/LibSort.sol";
 import { SENTINEL } from "src/utils/SentinelList.sol";
 import { OwnableExecutor } from "src/OwnableExecutor.sol";
+import { UserOpData } from "modulekit/ModuleKit.sol";
+
 
 contract OwnableExecutorUnitTest is RhinestoneModuleKit, Test {
     using ModuleKitHelpers for *;
@@ -46,6 +48,26 @@ contract OwnableExecutorUnitTest is RhinestoneModuleKit, Test {
     }
 
     function test_AddOwner() public {
+        UserOpData memory userOpData = smartAcct.getExecOps({
+            target: address(executor),
+            value: 0,
+            callData: abi.encodeCall(OwnableExecutor.addOwner, $owners[1]),
+            txValidator: address(smartAcct.defaultValidator)
+        });
+        userOpData.execUserOps();
 
+        address[] memory owners = executor.getOwners(smartAcct.account);
+        assertEq(owners.length, 2);
+    }
+
+    function test_ExecutedOnOwnedAccount() public {
+        uint256 val = 1 ether;
+        uint256 prevBal = target.balance;
+
+        vm.prank($owners[0]);
+        executor.executeOnOwnedAccount(
+            smartAcct.account, abi.encodePacked(target, val, bytes(""))
+        );
+        assertEq(target.balance, prevBal + val);
     }
 }
