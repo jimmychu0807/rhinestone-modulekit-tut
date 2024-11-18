@@ -106,8 +106,8 @@ contract SemaphoreValidatorUnitTest is RhinestoneModuleKit, Test {
         $owners[1] = _owner2;
         $ownerSks[1] = _owner2Sk;
 
-        console.logAddress($owners[0]);
-        console.logAddress($owners[1]);
+        // console.logAddress($owners[0]);
+        // console.logAddress($owners[1]);
         // console.log("sk[0]: %s", $ownerSks[0]);
         // console.log("sk[1]: %s", $ownerSks[1]);
     }
@@ -205,7 +205,7 @@ contract SemaphoreValidatorUnitTest is RhinestoneModuleKit, Test {
     //     assertEq(groupCounter, 1);
     // }
 
-    function test_ValidateUserOpWhenThresholdIsNotSet() public {
+    function test_ValidateUserOpWhenThresholdIsNotSet() public view {
         PackedUserOperation memory userOp = getEmptyUserOperation();
         userOp.sender = address(this);
         bytes32 userOpHash = keccak256("userOpHash");

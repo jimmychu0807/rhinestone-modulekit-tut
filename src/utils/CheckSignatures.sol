@@ -14,7 +14,7 @@ library CheckSignatures {
         bytes memory signatures,
         uint8 threshold
     ) public view returns (address[] memory recoveredSigners) {
-        uint256 requiredSignatureLength = threshold * 65;
+        // uint256 requiredSignatureLength = threshold * 65;
         uint256 signaturesLength = signatures.length;
         recoveredSigners = new address[](threshold);
 

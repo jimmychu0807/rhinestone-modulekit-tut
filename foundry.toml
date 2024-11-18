@@ -4,6 +4,7 @@ src = "src"
 out = "out"
 script = "script"
 libs = ["node_modules"]
+ignored_warnings_from = ["node_modules"]
 fs_permissions = [{ access = "read", path = "out-optimized" }, { access = "read-write", path = "gas_calculations" }]
 allow_paths = ["*", "/"]
 gas_limit = "18446744073709551615"

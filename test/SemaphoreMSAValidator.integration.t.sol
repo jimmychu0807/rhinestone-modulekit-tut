@@ -23,6 +23,7 @@ import {
 
 import { SemaphoreMSAValidator, ERC7579ValidatorBase } from "src/SemaphoreMSAValidator.sol";
 import { LibSort } from "solady/utils/LibSort.sol";
+import { signHash } from "test/utils/Signature.sol";
 
 contract SemaphoreValidatorIntegrationTest is RhinestoneModuleKit, Test {
     using ModuleKitHelpers for *;
@@ -78,7 +79,7 @@ contract SemaphoreValidatorIntegrationTest is RhinestoneModuleKit, Test {
         });
     }
 
-    function test_OnInstallSetOwnersAndThreshold() public {
+    function test_OnInstallSetOwnersAndThreshold() public view {
         assertEq(semaphoreValidator.threshold(smartAcct.account), _threshold);
         assertEq(semaphoreValidator.ownerCount(smartAcct.account), $owners.length);
 
@@ -89,10 +90,11 @@ contract SemaphoreValidatorIntegrationTest is RhinestoneModuleKit, Test {
 
     function test_ValidateUserOp() public {
         address target = makeAddr("target");
+        uint256 tfAmt = 7;
 
         UserOpData memory userOpData = smartAcct.getExecOps({
             target: target,
-            value: 1,
+            value: tfAmt,
             callData: "",
             txValidator: address(semaphoreValidator)
         });
@@ -102,10 +104,24 @@ contract SemaphoreValidatorIntegrationTest is RhinestoneModuleKit, Test {
         userOpData.userOp.signature = abi.encodePacked(sign1, sign2);
         userOpData.execUserOps();
 
-        assertEq(target.balance, 1);
+        assertEq(target.balance, tfAmt);
     }
 
+    // This function is for checking signature only. Not executing on the userOp.
     function test_ERC1271() public {
+        bytes32 hash = keccak256("hash");
+        bytes32 encodedHash = smartAcct.formatERC1271Hash({
+            validator: address(semaphoreValidator),
+            hash: hash
+        });
+        bytes memory sign1 = signHash($ownerSks[0], encodedHash);
+        bytes memory sign2 = signHash($ownerSks[1], encodedHash);
+        bytes memory signature = abi.encodePacked(sign1, sign2);
 
+        assertTrue(smartAcct.isValidSignature(
+            address(semaphoreValidator),
+            hash,
+            signature
+        ));
     }
 }

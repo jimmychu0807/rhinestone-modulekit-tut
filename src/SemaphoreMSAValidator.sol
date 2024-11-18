@@ -148,7 +148,7 @@ contract SemaphoreMSAValidator is ERC7579ValidatorBase {
         emit ModuleInitialized(account);
     }
 
-    function onUninstall(bytes calldata data) external override {
+    function onUninstall(bytes calldata) external override {
         // remove from our data structure
         delete inUse[msg.sender];
         delete gIds[msg.sender];

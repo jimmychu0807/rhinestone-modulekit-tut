@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import { PackedUserOperation } from "modulekit/external/ERC4337.sol";
 
-function getEmptyUserOperation() returns (PackedUserOperation memory) {
+function getEmptyUserOperation() pure returns (PackedUserOperation memory) {
     return PackedUserOperation({
         sender: address(0),
         nonce: 0,
