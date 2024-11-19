@@ -112,6 +112,22 @@ contract SemaphoreValidatorUnitTest is RhinestoneModuleKit, Test {
         // console.log("sk[1]: %s", $ownerSks[1]);
     }
 
+    function test_mloadmstore() public {
+        bytes memory var1 = new bytes(32);
+        bytes memory var2 = new bytes(64);
+        uint256 val;
+
+        assembly {
+            let memPtr := add(var1, 0x20)
+            mstore(memPtr, 17)
+
+            val := mload(memPtr)
+        }
+
+        console.logBytes(var1);
+        console.log("val: %s", val);
+    }
+
     function test_SemaphoreDeployProperly() public {
         ISemaphore semaphore = semaphoreValidator.semaphore();
         ISemaphoreGroups groups = semaphoreValidator.groups();
