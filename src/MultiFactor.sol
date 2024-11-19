@@ -197,7 +197,7 @@ contract MultiFactor is ERC7579ValidatorBase, ERC7484RegistryAdapter {
         emit ValidatorAdded(account, validatorAddress, id, iteration);
     }
 
-    function isModuleType(uint256 moduleTypeId) external view returns (bool) {
+    function isModuleType(uint256 moduleTypeId) external pure returns (bool) {
         return moduleTypeId == TYPE_VALIDATOR;
     }
 
@@ -210,14 +210,17 @@ contract MultiFactor is ERC7579ValidatorBase, ERC7484RegistryAdapter {
         override
         returns (ValidationData)
     {
-        // NX>
+        Validator[] calldata validators = MultiFactorLib.decode(userOp.signature);
+        bool isValid = _validateSignatureWithConfig(userOp.sender, validators, userOpHash);
+
+        if (isValid) return VALIDATION_SUCCESS;
         return VALIDATION_FAILED;
     }
 
     function isValidSignatureWithSender(
-        address sender,
+        address,
         bytes32 hash,
-        bytes calldata signature
+        bytes calldata data
     )
         external
         view
@@ -225,6 +228,10 @@ contract MultiFactor is ERC7579ValidatorBase, ERC7484RegistryAdapter {
         override
         returns (bytes4 sigValidationResult)
     {
+        Validator[] calldata validators = MultiFactorLib.decode(data);
+        bool isValid = _validateSignatureWithConfig(msg.sender, validators, hash);
+
+        if (isValid) return EIP1271_SUCCESS;
         return EIP1271_FAILED;
     }
 
@@ -240,6 +247,49 @@ contract MultiFactor is ERC7579ValidatorBase, ERC7484RegistryAdapter {
         returns (bool)
     {
         return false;
+    }
+
+    function _validateSignatureWithConfig(
+        address account,
+        Validator[] calldata validators,
+        bytes32 hash
+    )
+        internal
+        view
+        returns (bool)
+    {
+        uint256 validatorsLen = validators.length;
+        if (validatorsLen == 0) return false;
+
+        MFAConfig storage $config = accountConfig[account];
+        uint256 iter = $config.iteration;
+        uint256 validCount;
+
+        for (uint256 i; i < validatorsLen; i++) {
+            Validator calldata validator = validators[i];
+            (address validatorAddress, ValidatorId id) =
+                MultiFactorLib.unpack(validator.packedValidatorAndId);
+
+            FlatBytesLib.Bytes storage $validator = $subValidatorData({
+                account: account,
+                iteration: iter,
+                valAddr: validatorAddress,
+                id: id
+            });
+
+            bytes memory validatorStorageData = $validator.load();
+            if (validatorStorageData.length == 0) return false;
+
+            bool isValid = IStatelessValidator(validatorAddress).validateSignatureWithData({
+                hash: hash,
+                signature: validator.data,
+                data: validatorStorageData
+            });
+
+            if (isValid) validCount += 1;
+        }
+
+        return validCount >= $config.threshold;
     }
 
     // Internal helpers

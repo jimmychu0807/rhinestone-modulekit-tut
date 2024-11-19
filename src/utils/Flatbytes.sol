@@ -36,7 +36,7 @@ library FlatBytesLib {
         }
     }
 
-    function load(Bytes storage self) internal returns(bytes memory) {
+    function load(Bytes storage self) internal view returns(bytes memory) {
         return self.toBytes();
     }
 
