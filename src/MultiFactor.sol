@@ -43,6 +43,8 @@ contract MultiFactor is ERC7579ValidatorBase, ERC7484RegistryAdapter {
     // events
     event ThresholdSet(address account, uint8 threshold);
     event ValidatorAdd(address account, address valAddr, ValidatorId id, uint256 iteration);
+    event IterationIncreased(address, uint64);
+    event ValidatorAdded(address, address, ValidatorId, uint256);
 
     // The storage
     mapping(address account => MFAConfig config) public accountConfig;
@@ -104,13 +106,95 @@ contract MultiFactor is ERC7579ValidatorBase, ERC7484RegistryAdapter {
         $config.validationLength = _valLen;
     }
 
-    function onUninstall(bytes calldata data) external virtual view {
+    function onUninstall(bytes calldata) external virtual {
+        address account = msg.sender;
+        MFAConfig storage $config = accountConfig[account];
 
+        $config.iteration += 1;
+
+        delete $config.threshold;
+        delete $config.validationLength;
+
+        emit IterationIncreased(account, $config.iteration);
     }
 
     function isInitialized(address account) public virtual view returns (bool) {
         MFAConfig storage $config = accountConfig[account];
         return $config.threshold > 0;
+    }
+
+    function setThreshold(uint8 threshold) external {
+        address account = msg.sender;
+        if (!isInitialized(account)) revert NotInitialized(account);
+
+        // get storage reference to account config
+        MFAConfig storage $config = accountConfig[account];
+
+        if ($config.validationLength < threshold) {
+            revert InvalidThreshold($config.validationLength, threshold);
+        }
+
+        // check if threshold is 0 and revert if it is
+        if (threshold == 0) revert ZeroThreshold();
+        // set the threshold
+        $config.threshold = threshold;
+
+        emit ThresholdSet(account, threshold);
+    }
+
+    function setValidator(
+        address validatorAddress,
+        ValidatorId id,
+        bytes calldata newValidatorData
+    )
+        external
+    {
+        // to prevent the user from overwriting an existing subvalidator configuration with 0
+        // config, we check this
+        if (newValidatorData.length == 0) revert InvalidValidatorData();
+
+        // cache the account
+        address account = msg.sender;
+        // check if the module is initialized and revert if it is not
+        if (!isInitialized(account)) revert NotInitialized(account);
+
+        // get storage reference to account config
+        MFAConfig storage $config = accountConfig[account];
+        // cache the current iteration
+        uint256 iteration = $config.iteration;
+
+        // check that the subValidator is an attested validator and revert if it is not
+        REGISTRY.checkForAccount({
+            smartAccount: msg.sender,
+            module: validatorAddress,
+            moduleType: MODULE_TYPE_VALIDATOR
+        });
+
+        // get storage reference to subValidator config
+        FlatBytesLib.Bytes storage $validator = $subValidatorData({
+            account: account,
+            iteration: iteration,
+            valAddr: validatorAddress,
+            id: id
+        });
+
+        // if this subvalidator is brand new, we have to iterate the validationLength counter.
+        // should the validationData be new, but the subValidator already exist,
+        // we don't need to do
+        if ($validator.load().length == 0) {
+            $config.validationLength += 1;
+        }
+        // set the subValidator data
+        $validator.store(newValidatorData);
+
+        if (newValidatorData.length == 0) {
+            if ($config.validationLength < $config.threshold) {
+                revert InvalidThreshold($config.validationLength, $config.threshold);
+            }
+        }
+
+        // emit the ValidatorAdded event
+        emit ValidatorAdded(account, validatorAddress, id, iteration);
     }
 
     function isModuleType(uint256 moduleTypeId) external view returns (bool) {
@@ -126,6 +210,7 @@ contract MultiFactor is ERC7579ValidatorBase, ERC7484RegistryAdapter {
         override
         returns (ValidationData)
     {
+        // NX>
         return VALIDATION_FAILED;
     }
 

@@ -36,6 +36,10 @@ library FlatBytesLib {
         }
     }
 
+    function load(Bytes storage self) internal returns(bytes memory) {
+        return self.toBytes();
+    }
+
     function toArray(bytes memory data)
         internal pure
         returns (uint256 totalLen, bytes32[] memory dataList)
@@ -52,6 +56,27 @@ library FlatBytesLib {
                 temp := mload(add(data, mul(add(i, 1), 32)))
             }
             dataList[i] = temp;
+        }
+    }
+
+    function toBytes(Bytes storage self) internal view returns (bytes memory data) {
+        uint256 totalLength = self.totalLength;
+        uint256 slotsCnt = (totalLength + 31) / 32;
+
+        Data storage _data = self.data;
+
+        bytes32[] memory entries = new bytes32[](slotsCnt);
+        for (uint256 i; i < slotsCnt; i++) {
+            bytes32 tmp;
+            assembly {
+                tmp := sload(add(_data.slot, i))
+            }
+            entries[i] = tmp;
+        }
+
+        data = abi.encodePacked(entries);
+        assembly {
+            mstore(data, totalLength)
         }
     }
 }
