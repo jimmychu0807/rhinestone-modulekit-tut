@@ -5,8 +5,7 @@ import { Test } from "forge-std/Test.sol";
 import {
     RhinestoneModuleKit,
     ModuleKitHelpers,
-    ModuleKitUserOp,
-    AccountInstance
+    ModuleKitUserOp
 } from "modulekit/ModuleKit.sol";
 import { MODULE_TYPE_EXECUTOR } from "modulekit/external/ERC7579.sol";
 import { ExecutionLib } from "erc7579/lib/ExecutionLib.sol";

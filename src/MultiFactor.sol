@@ -197,6 +197,25 @@ contract MultiFactor is ERC7579ValidatorBase, ERC7484RegistryAdapter {
         emit ValidatorAdded(account, validatorAddress, id, iteration);
     }
 
+    function isSubValidator(
+        address account,
+        address subValidator,
+        ValidatorId id
+    )
+        external
+        view
+        returns (bool)
+    {
+        MFAConfig storage $config = accountConfig[account];
+        FlatBytesLib.Bytes storage $validator = $subValidatorData({
+            account: account,
+            iteration: $config.iteration,
+            valAddr: subValidator,
+            id: id
+        });
+        return $validator.load().length > 0;
+    }
+
     function isModuleType(uint256 moduleTypeId) external pure returns (bool) {
         return moduleTypeId == TYPE_VALIDATOR;
     }
@@ -236,9 +255,9 @@ contract MultiFactor is ERC7579ValidatorBase, ERC7484RegistryAdapter {
     }
 
     function validateSignatureWithData(
-        bytes32 hash,
-        bytes calldata signature,
-        bytes calldata data
+        bytes32,
+        bytes calldata,
+        bytes calldata
     )
         external
         view
